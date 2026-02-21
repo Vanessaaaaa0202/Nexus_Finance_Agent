@@ -6,16 +6,7 @@ import plotly.graph_objects as go
 import time
 from openai import OpenAI 
 
-# ==========================================
-# 1. 页面配置与高级画廊 CSS
-# ==========================================
 st.set_page_config(page_title="Nexus Finance Agent", layout="wide")
-# ==========================================
-# 1. 页面配置与高级画廊 CSS
-# ==========================================
-st.set_page_config(page_title="Nexus Finance Agent", layout="wide")
-
-# 将你找到的官方 <link> 标签和内部样式表完美结合
 st.markdown("""
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
