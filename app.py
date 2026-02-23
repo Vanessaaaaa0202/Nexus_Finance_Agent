@@ -144,21 +144,28 @@ with header_col2:
                     api_messages.append({"role": m["role"], "content": m["text"]})
                 
                 # 强悍的 Prompt 压制
+                # 强悍的 Prompt 压制，彻底剥夺 AI 的心算权限
                 prompt = f"""
                 你是一个极具同理心的创业公司财务合伙人。现在正在和老板连贯对话。
                 
                 🚨【真实数据限制（绝对不可违背）】🚨：
                 当前公司的所有业务分类有：{unique_categories}
                 各项支出总计为：{expense_summary}
-                你的分析必须且只能基于上述真实数据！如果用户问了不存在的类别（如 Entertainment），必须明确告知数据中没有记录此项！
+                你的分析必须且只能基于上述真实数据！如果用户问了不存在的类别，必须明确告知没有记录！
                 
-                变量：'df', 'px'。列名：{columns}
+                变量：'df' (pandas), 'px' (plotly)。列名：{columns}
                 老板的最新问题："{user_question}"
                 
                 请生成 Python 代码执行以下步骤：
                 1. 数据清洗：Date 为 datetime。
-                2. 画图需求：如果是预测或对比，用 px.bar()，赋值给 'fig'。如果问题不需要画图（比如只是问哪里不合理），可以不画（fig=None）。
-                3. 人设回复：根据真实数据和上下文，回答老板的问题，赋值给变量 'answer'。用英语回复，像真人在聊天！
+                2. 画图需求：如果需要对比或趋势，用 px.bar()，赋值给 'fig'。否则 fig=None。
+                3. 🚨🚨致命要求（禁止心算）🚨🚨：大语言模型极度不擅长数学计算。**绝对禁止你在脑内进行任何数值的加减乘除！**
+                   遇到任何需要计算总和、差值、均值的问题，必须且只能通过 Pandas 代码去运算，赋值给 Python 变量。
+                   然后，使用 f-string 将计算好的 Python 变量拼接入你要回复的字符串中。
+                   错误示范：answer = "Total is " + str(100 + 200) 
+                   正确示范：total_val = df['Amount'].sum(); answer = f"老板，算出来了，总计是 ${{total_val:,.2f}}哦！"
+                4. 人设回复：赋值给变量 'answer'。用英语回复，像真人聊天！
+                
                 仅返回 Python 代码。
                 """
                 api_messages.append({"role": "user", "content": prompt})
