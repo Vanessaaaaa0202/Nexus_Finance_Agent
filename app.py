@@ -119,11 +119,13 @@ with header_col2:
                 st.session_state.chat_history = []
                 
             # 【核心修复 2】：每次刷新时，先把历史聊天记录渲染出来
-            for msg in st.session_state.chat_history:
+            # 🚨 修改 1：加上 enumerate 获取序号 i
+            for i, msg in enumerate(st.session_state.chat_history):
                 with st.chat_message(msg["role"]):
                     st.write(msg["text"])
                     if msg.get("fig") is not None:
-                        st.plotly_chart(msg["fig"], use_container_width=True)
+                        # 🚨 修改 2：加上独一无二的 key
+                        st.plotly_chart(msg["fig"], use_container_width=True, key=f"history_fig_{i}")
             
             user_question = st.chat_input("Type your question...")
             
@@ -192,7 +194,8 @@ with header_col2:
                     st.write(final_answer)
                     if final_fig is not None:
                         final_fig.update_layout(margin=dict(t=20, b=20, l=0, r=0), height=300)
-                        st.plotly_chart(final_fig, use_container_width=True)
+                        # 🚨 修改 3：给新生成的图表也加上独一无二的 key
+                        st.plotly_chart(final_fig, use_container_width=True, key=f"new_fig_{len(st.session_state.chat_history)}")
                 
                 # 2. 把 AI 的回答也存入记忆库，完成闭环
                 st.session_state.chat_history.append({"role": "assistant", "text": final_answer, "fig": final_fig})
