@@ -177,7 +177,7 @@ with header_col2:
                         try:
                             # 传入完整的 api_messages，包含系统设定、历史对话和最新问题
                             response = client.chat.completions.create(
-                                model="gpt-4o-mini",
+                                model="gpt-4o",
                                 messages=api_messages,
                                 temperature=0.1
                             )
