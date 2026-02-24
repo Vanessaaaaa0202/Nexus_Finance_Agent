@@ -6,12 +6,9 @@ import plotly.graph_objects as go
 import time
 from openai import OpenAI 
 
-# ==========================================
-# 1. 页面配置与高级画廊 CSS
-# ==========================================
+# 1. 页面配置与画廊
 st.set_page_config(page_title="Nexus Finance Agent", layout="wide")
 
-# 将你找到的官方 <link> 标签和内部样式表完美结合
 st.markdown("""
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -23,7 +20,6 @@ st.markdown("""
         background-color: #ffffff;
     }
     
-    /* 1. 主标题：完美融合 Google Fonts 官方规范 */
     .main-title {
         font-family:'Caveat', cursive !important;
         font-optical-sizing: auto;
@@ -118,7 +114,7 @@ with header_col2:
                 if "chat_history" not in st.session_state:
                     st.session_state.chat_history = []
                     
-                # 渲染历史记录（带有唯一 key 防爆红）
+                # 渲染历史记录
                 for i, msg in enumerate(st.session_state.chat_history):
                     with st.chat_message(msg["role"]):
                         st.write(msg["text"])
@@ -133,13 +129,10 @@ with header_col2:
                     with st.chat_message("user"):
                         st.write(user_question)
                     
-                    # ==========================================
-                    # 【核心模块 1】：打造本地“白盒工具” (Python 函数)
-                    # ==========================================
                     import json
                     
                     def get_category_total(category_name):
-                        """工具 1：精准计算某个类别的总金额，绝不瞎猜"""
+                        """工具 1：精准计算某个类别的总金额"""
                         if category_name not in df['Category'].unique():
                             return f"数据库中未找到 '{category_name}' 的记录，请告诉用户数据不存在。"
                         total = df_paid[df_paid['Category'] == category_name]['Amount'].sum()
@@ -159,9 +152,7 @@ with header_col2:
                                      category_orders={'Month_Name': month_order}, color_discrete_sequence=['#F0B622'])
                         return "图表已经成功在后端生成，告诉用户你已经把图画在下面了。", fig
     
-                    # ==========================================
-                    # 【核心模块 2】：编写“工具说明书” (JSON Schema) 给 AI
-                    # ==========================================
+                    # JSON Schema
                     tools = [
                         {
                             "type": "function",
@@ -198,29 +189,20 @@ with header_col2:
                         api_messages.append({"role": m["role"], "content": m["text"]})
                     api_messages.append({"role": "user", "content": user_question})
                     
-                    # ==========================================
-                    # 【核心模块 3】：双重 API 调用 (Orchestration Loop)
-                    # ==========================================
+                    # 双重 API 调用
                     with st.chat_message("assistant"):
-                        with st.spinner("✨ Nexus CFO is thinking..."):
-                            
+                        with st.spinner("✨ Nexus CFO is thinking..."):   
                             final_fig = None
-                            
-                            # 第一轮呼叫：让 AI 思考是否需要用工具
                             response = client.chat.completions.create(
-                                model="gpt-4o", # 直接升级到满血版 gpt-4o 感受顶级智商
+                                model="gpt-4o", 
                                 messages=api_messages,
                                 tools=tools,
-                                tool_choice="auto" # 让 AI 自主决定用不用工具
+                                tool_choice="auto" 
                             )
                             
                             response_message = response.choices[0].message
-                            
-                            # 判断 AI 是否决定调用工具
                             if response_message.tool_calls:
-                                api_messages.append(response_message) # 把 AI 的“拿工具”动作存入记忆
-                                
-                                # 后端执行工具
+                                api_messages.append(response_message)
                                 for tool_call in response_message.tool_calls:
                                     function_name = tool_call.function.name
                                     function_args = json.loads(tool_call.function.arguments)
@@ -232,26 +214,20 @@ with header_col2:
                                         if generated_fig: final_fig = generated_fig
                                     else:
                                         tool_result = "未知错误。"
-                                    
-                                    # 把计算结果“喂”给 AI
                                     api_messages.append({
                                         "tool_call_id": tool_call.id,
                                         "role": "tool",
                                         "name": function_name,
                                         "content": tool_result,
                                     })
-                                
-                                # 第二轮呼叫：AI 拿到真实数据后，组织语言回答你
+
                                 second_response = client.chat.completions.create(
                                     model="gpt-4o",
                                     messages=api_messages
                                 )
                                 final_answer = second_response.choices[0].message.content
                             else:
-                                # AI 判断不需要工具（比如你在和它闲聊），直接输出文字
                                 final_answer = response_message.content
-                                
-                            # 渲染最终答案和图表
                             st.write(final_answer)
                             if final_fig is not None:
                                 st.plotly_chart(final_fig, use_container_width=True, key=f"new_fig_{len(st.session_state.chat_history)}")
@@ -343,8 +319,6 @@ if df is not None:
                     category_orders={'Month_Name': month_order}
                 )
                 fig_bar.update_layout(
-                    # 🚨 已经删除了原有的 title=dict(...)
-                    # 🚨 t=60 改成了 t=40，和左边饼图完全对齐
                     margin=dict(t=40, b=40, l=20, r=20), paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', font_family="Inter",
                     hovermode="x unified", hoverlabel=dict(bgcolor="white", bordercolor="#e5e7eb", font_size=13, font_family="Inter"),
                     yaxis=dict(title="", showgrid=True, gridcolor='#f0f2f6', tickformat="$.2s", zeroline=False),
@@ -352,13 +326,11 @@ if df is not None:
                     legend=dict(title="", orientation="h", yanchor="top", y=-0.15, xanchor="center", x=0.5, font=dict(size=12, color='#666'))
                 )
                 fig_bar.update_traces(opacity=0.9, hovertemplate="<b>%{data.name}</b>: $%{y:,.0f}<extra></extra>") 
-                
-                # 【终极同步】：添加和饼图一模一样规格的 HTML 标题
+            
                 st.markdown(f"<div style='text-align: center; font-size: 18px; color: #333333; font-weight: 600; margin-bottom: 5px;'>{title_prefix} by Month</div>", unsafe_allow_html=True)
                 
                 st.plotly_chart(fig_bar, use_container_width=True)
 
-    # 渲染 Tabs
     with tab_rev:
         draw_charts(df_paid[df_paid['Category'].isin(revenue_categories)].copy(), "Revenue")
     with tab_exp:
