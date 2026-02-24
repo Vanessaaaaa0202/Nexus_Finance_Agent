@@ -110,95 +110,154 @@ with header_col2:
     st.markdown("<div style='margin-top: 25px;'></div>", unsafe_allow_html=True)
     
     if df is not None and client:
-        with st.popover("✨ Ask AI Copilot", use_container_width=True):
-            st.markdown("**Nexus AI Agent**")
-            st.caption("E.g., 'Predict the cash flow for next month'")
-            
-            # 【核心修复 1】：初始化聊天记忆库 (Session State)
-            if "chat_history" not in st.session_state:
-                st.session_state.chat_history = []
+            with st.popover("✨ Ask AI Copilot", use_container_width=True):
+                st.markdown("**Nexus AI Agent (Function Calling V1)**")
+                st.caption("E.g., 'How much did we spend on Payroll?' or 'Show me the trend of Rent.'")
                 
-            # 【核心修复 2】：每次刷新时，先把历史聊天记录渲染出来
-            # 🚨 修改 1：加上 enumerate 获取序号 i
-            for i, msg in enumerate(st.session_state.chat_history):
-                with st.chat_message(msg["role"]):
-                    st.write(msg["text"])
-                    if msg.get("fig") is not None:
-                        # 🚨 修改 2：加上独一无二的 key
-                        st.plotly_chart(msg["fig"], use_container_width=True, key=f"history_fig_{i}")
-            
-            user_question = st.chat_input("Type your question...")
-            
-            if user_question:
-                # 1. 把用户的新问题存入记忆库，并立刻显示在屏幕上
-                st.session_state.chat_history.append({"role": "user", "text": user_question})
-                with st.chat_message("user"):
-                    st.write(user_question)
+                # 初始化记忆库
+                if "chat_history" not in st.session_state:
+                    st.session_state.chat_history = []
+                    
+                # 渲染历史记录（带有唯一 key 防爆红）
+                for i, msg in enumerate(st.session_state.chat_history):
+                    with st.chat_message(msg["role"]):
+                        st.write(msg["text"])
+                        if msg.get("fig") is not None:
+                            st.plotly_chart(msg["fig"], use_container_width=True, key=f"hist_{i}")
                 
-                # 【核心修复 3】：提取真实的业务数据上下文，彻底封杀幻觉！
-                unique_categories = df['Category'].unique().tolist()
-                expense_summary = df[~df['Category'].isin(revenue_categories)].groupby('Category')['Amount'].sum().to_dict()
-                columns = df.columns.tolist()
+                user_question = st.chat_input("Type your question...")
                 
-                # 把历史聊天记录转换为大模型能听懂的格式
-                api_messages = [{"role": "system", "content": "你是一个只输出 Python 代码的引擎。"}]
-                for m in st.session_state.chat_history[:-1]: # 传入历史对话，让它拥有记忆
-                    api_messages.append({"role": m["role"], "content": m["text"]})
-                
-                # 强悍的 Prompt 压制
-                # 强悍的 Prompt 压制，彻底剥夺 AI 的心算权限
-                prompt = f"""
-                你是一个极具同理心的创业公司财务合伙人。现在正在和老板连贯对话。
-                
-                🚨【真实数据限制（绝对不可违背）】🚨：
-                当前公司的所有业务分类有：{unique_categories}
-                各项支出总计为：{expense_summary}
-                你的分析必须且只能基于上述真实数据！如果用户问了不存在的类别，必须明确告知没有记录！
-                
-                变量：'df' (pandas), 'px' (plotly)。列名：{columns}
-                老板的最新问题："{user_question}"
-                
-                请生成 Python 代码执行以下步骤：
-                1. 数据清洗：Date 为 datetime。
-                2. 画图需求：如果需要对比或趋势，用 px.bar()，赋值给 'fig'。否则 fig=None。
-                3. 🚨🚨致命要求（禁止心算）🚨🚨：大语言模型极度不擅长数学计算。**绝对禁止你在脑内进行任何数值的加减乘除！**
-                   遇到任何需要计算总和、差值、均值的问题，必须且只能通过 Pandas 代码去运算，赋值给 Python 变量。
-                   然后，使用 f-string 将计算好的 Python 变量拼接入你要回复的字符串中。
-                   错误示范：answer = "Total is " + str(100 + 200) 
-                   正确示范：total_val = df['Amount'].sum(); answer = f"老板，算出来了，总计是 ${{total_val:,.2f}}哦！"
-                4. 人设回复：赋值给变量 'answer'。用英语回复，像真人聊天！
-                
-                仅返回 Python 代码。
-                """
-                api_messages.append({"role": "user", "content": prompt})
-                
-                with st.chat_message("assistant"):
-                    with st.spinner("✨ Nexus AI is analyzing your ledger..."):
-                        try:
-                            # 传入完整的 api_messages，包含系统设定、历史对话和最新问题
-                            response = client.chat.completions.create(
-                                model="gpt-4o",
-                                messages=api_messages,
-                                temperature=0.1
-                            )
-                            code_to_run = response.choices[0].message.content.replace('```python', '').replace('```', '').strip()
-                            local_vars = {'df': df, 'pd': pd, 'np': np, 'px': px}
-                            exec(code_to_run, {}, local_vars)
+                if user_question:
+                    # 记录并展示用户问题
+                    st.session_state.chat_history.append({"role": "user", "text": user_question})
+                    with st.chat_message("user"):
+                        st.write(user_question)
+                    
+                    # ==========================================
+                    # 【核心模块 1】：打造本地“白盒工具” (Python 函数)
+                    # ==========================================
+                    import json
+                    
+                    def get_category_total(category_name):
+                        """工具 1：精准计算某个类别的总金额，绝不瞎猜"""
+                        if category_name not in df['Category'].unique():
+                            return f"数据库中未找到 '{category_name}' 的记录，请告诉用户数据不存在。"
+                        total = df_paid[df_paid['Category'] == category_name]['Amount'].sum()
+                        return f"{category_name} 的历史总金额是 ${total:,.2f}"
+    
+                    def plot_category_trend(category_name):
+                        """工具 2：根据用户要求画出月度趋势图"""
+                        if category_name not in df['Category'].unique():
+                            return f"数据库中未找到 '{category_name}' 的记录，无法画图。", None
+                        
+                        sub_df = df_paid[df_paid['Category'] == category_name].copy()
+                        sub_df['Month_Name'] = sub_df['Date'].dt.month_name()
+                        month_order = sub_df.sort_values('Date')['Month_Name'].unique().tolist()
+                        bar_data = sub_df.groupby('Month_Name')['Amount'].sum().reset_index()
+                        
+                        fig = px.bar(bar_data, x='Month_Name', y='Amount', title=f"{category_name} Monthly Trend",
+                                     category_orders={'Month_Name': month_order}, color_discrete_sequence=['#F0B622'])
+                        return "图表已经成功在后端生成，告诉用户你已经把图画在下面了。", fig
+    
+                    # ==========================================
+                    # 【核心模块 2】：编写“工具说明书” (JSON Schema) 给 AI
+                    # ==========================================
+                    tools = [
+                        {
+                            "type": "function",
+                            "function": {
+                                "name": "get_category_total",
+                                "description": "当用户想知道某一项具体的财务支出或收入总额时（例如：Payroll花了多少钱），调用此工具获取精准数字。",
+                                "parameters": {
+                                    "type": "object",
+                                    "properties": {"category_name": {"type": "string", "description": "业务类别名称，如 Payroll, Rent, Marketing 等"}},
+                                    "required": ["category_name"]
+                                }
+                            }
+                        },
+                        {
+                            "type": "function",
+                            "function": {
+                                "name": "plot_category_trend",
+                                "description": "当用户明确要求看趋势、画图、或者看某项支出每个月的变化时，调用此工具生成柱状图。",
+                                "parameters": {
+                                    "type": "object",
+                                    "properties": {"category_name": {"type": "string", "description": "业务类别名称"}},
+                                    "required": ["category_name"]
+                                }
+                            }
+                        }
+                    ]
+    
+                    # 提取当前的 Category 给 AI 做参考
+                    valid_categories = df['Category'].unique().tolist()
+                    
+                    # 组装对话上下文
+                    api_messages = [{"role": "system", "content": f"你是一位专业的 Fractional CFO。你现在可以和老板自由对话。我们公司的业务分类有：{valid_categories}。你需要数据时，必须调用 tools，严禁心算！"}]
+                    for m in st.session_state.chat_history[:-1]:
+                        api_messages.append({"role": m["role"], "content": m["text"]})
+                    api_messages.append({"role": "user", "content": user_question})
+                    
+                    # ==========================================
+                    # 【核心模块 3】：双重 API 调用 (Orchestration Loop)
+                    # ==========================================
+                    with st.chat_message("assistant"):
+                        with st.spinner("✨ Nexus CFO is thinking..."):
                             
-                            final_answer = local_vars.get('answer', "I've analyzed the data for you.")
-                            final_fig = local_vars.get('fig', None)
-                        except Exception as e:
-                            final_answer = "Oops, I ran into a little hiccup. Could you try asking in a different way?"
                             final_fig = None
                             
-                    st.write(final_answer)
-                    if final_fig is not None:
-                        final_fig.update_layout(margin=dict(t=20, b=20, l=0, r=0), height=300)
-                        # 🚨 修改 3：给新生成的图表也加上独一无二的 key
-                        st.plotly_chart(final_fig, use_container_width=True, key=f"new_fig_{len(st.session_state.chat_history)}")
-                
-                # 2. 把 AI 的回答也存入记忆库，完成闭环
-                st.session_state.chat_history.append({"role": "assistant", "text": final_answer, "fig": final_fig})
+                            # 第一轮呼叫：让 AI 思考是否需要用工具
+                            response = client.chat.completions.create(
+                                model="gpt-4o", # 直接升级到满血版 gpt-4o 感受顶级智商
+                                messages=api_messages,
+                                tools=tools,
+                                tool_choice="auto" # 让 AI 自主决定用不用工具
+                            )
+                            
+                            response_message = response.choices[0].message
+                            
+                            # 判断 AI 是否决定调用工具
+                            if response_message.tool_calls:
+                                api_messages.append(response_message) # 把 AI 的“拿工具”动作存入记忆
+                                
+                                # 后端执行工具
+                                for tool_call in response_message.tool_calls:
+                                    function_name = tool_call.function.name
+                                    function_args = json.loads(tool_call.function.arguments)
+                                    
+                                    if function_name == "get_category_total":
+                                        tool_result = get_category_total(function_args.get("category_name"))
+                                    elif function_name == "plot_category_trend":
+                                        tool_result, generated_fig = plot_category_trend(function_args.get("category_name"))
+                                        if generated_fig: final_fig = generated_fig
+                                    else:
+                                        tool_result = "未知错误。"
+                                    
+                                    # 把计算结果“喂”给 AI
+                                    api_messages.append({
+                                        "tool_call_id": tool_call.id,
+                                        "role": "tool",
+                                        "name": function_name,
+                                        "content": tool_result,
+                                    })
+                                
+                                # 第二轮呼叫：AI 拿到真实数据后，组织语言回答你
+                                second_response = client.chat.completions.create(
+                                    model="gpt-4o",
+                                    messages=api_messages
+                                )
+                                final_answer = second_response.choices[0].message.content
+                            else:
+                                # AI 判断不需要工具（比如你在和它闲聊），直接输出文字
+                                final_answer = response_message.content
+                                
+                            # 渲染最终答案和图表
+                            st.write(final_answer)
+                            if final_fig is not None:
+                                st.plotly_chart(final_fig, use_container_width=True, key=f"new_fig_{len(st.session_state.chat_history)}")
+                                
+                            # 存入记忆库
+                            st.session_state.chat_history.append({"role": "assistant", "text": final_answer, "fig": final_fig})
 
 # 5. 主界面逻辑 (指标卡、气泡与图表)
 if df is not None:
